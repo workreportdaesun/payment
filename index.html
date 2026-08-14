@@ -2,7 +2,9 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=1400, user-scalable=yes, maximum-scale=5"/>
+<!-- 고정 폭(1400) 대신 반응형 — 1366px 노트북에서 가로 스크롤이 생기던 것을 없앴다.
+     표가 넓은 건 .tablewrap 이 자기 안에서 가로 스크롤한다. -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>기성관리</title>
 <link rel="icon" type="image/png" href="https://workreportdaesun.github.io/report/app/icon-192.png"/>
 <!-- 이 앱은 다른 앱들과 달리 계정 연동을 하지 않는다(2026-08-14 사용자 확정).
@@ -51,14 +53,14 @@
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 :root{
-  --bg:#F0F4F8; --card:#fff; --card-bd:#D1DCE8; --ink:#1A2332; --lbl:#5A7A9A; --field-bd:#C8D8E8; --head-bg:#DCE6F2;
+  --bg:#F0F4F8; --card:#fff; --card-bd:#D1DCE8; --ink:#1A2332; --lbl:#4A6B8A; --field-bd:#C8D8E8; --head-bg:#DCE6F2;
   --field-bg:#F7FAFC; --brand-1:#1E3A5F; --brand-2:#2E5F9E;
-  --ok:#27AE60; --err:#E74C3C; --warn:#F39C12;
+  --ok:#1B7A43; --err:#C0392B; --warn:#A05A18;
   --font-body:Arial,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
   --font-mono:"SFMono-Regular",Consolas,Menlo,monospace;
 }
 body{background:var(--bg); color:var(--ink); font-family:var(--font-body); min-height:100vh;}
-.wrap{width:100%; padding:24px 20px 60px;}
+.wrap{width:100%; max-width:1600px; margin:0 auto; padding:24px 20px 60px;}
 .hdr{background:linear-gradient(135deg,var(--brand-1),var(--brand-2)); padding:16px 20px; margin-bottom:20px; color:#fff; display:flex; justify-content:space-between; align-items:center;}
 .hdr h1{font-size:19px; font-weight:800;}
 .hdr .proj{font-size:12px; opacity:.85; margin-top:2px;}
