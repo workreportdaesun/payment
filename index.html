@@ -284,7 +284,7 @@ async function handleContractUpload(input){
       if(!sn){ alert('"계약내역" 시트를 찾을 수 없습니다. 서식 파일을 사용해 주세요.'); return; }
       var rows=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1});
       var known={}; catList.forEach(function(c){ known[c]=1; });
-      var out=[],errs=[],sum=0;
+      var out=[],errs=[],warns=[],sum=0;
       rows.slice(2).forEach(function(r,i){
         if(!r||r.every(function(v){return v===undefined||v===null||v==='';})) return;
         var n=i+3, s=function(v){ return v==null?'':String(v).trim(); };
@@ -293,9 +293,25 @@ async function handleContractUpload(input){
         var tot=num(r[10])||(m+l+x), amt=num(r[11]);
         if(!name){ errs.push(n+'행: 품명이 비었습니다'); return; }
         if(!unit){ errs.push(n+'행: 단위가 비었습니다 ('+name+')'); return; }
+        /* ★ 소계·공종 행 차단 (2026-08-14 실측으로 추가)
+           실제 항목은 합계단가 > 0 이고, 소계·공종 행은 단가가 비어 있고 금액만 있다.
+           이걸 안 막으면 소계가 항목과 함께 더해져 계약금액이 부풀려진다.
+           실제 제7회 내역서로 확인한 결과 규칙을 잘못 잡으면 3억 이상 어긋난다. */
+        if(tot<=0){
+          errs.push(n+'행: 합계단가가 0입니다 ('+name+') — 소계·공종 행으로 보입니다. 실제 항목만 넣어 주세요');
+          return;
+        }
         if(!cat){ errs.push(n+'행: 작업분류가 비었습니다 ('+name+') — 실적과 연결되지 않습니다'); return; }
         if(!known[cat]){ errs.push(n+'행: 작업분류 "'+cat+'"는 작업일보에 없는 값입니다'); return; }
         if(Math.abs(tot-(m+l+x))>=0.005){ errs.push(n+'행: 합계단가('+tot+')가 재료비+노무비+경비('+(m+l+x)+')와 다릅니다'); return; }
+        /* 계약금액 열을 채워왔다면 수량×단가와 맞는지 본다 (오타·복사 실수 검출) */
+        if(amt>0 && Math.abs(amt-q*tot)>=1){
+          warns.push(n+'행: 계약금액('+won(amt)+')이 수량×단가('+won(q*tot)+')와 다릅니다 — '+name);
+        }
+        /* 간접비는 별도 관리 대상이라 계약내역에 섞이면 안 된다 */
+        if(/^(LOT|식|L\/S)$/i.test(unit)){
+          warns.push(n+'행: 단위가 '+unit+' 입니다 ('+name+') — 간접비·공종 총액 행이면 빼주세요');
+        }
         sum += amt||(q*tot);
         out.push({menu:'시공',cat:cat,spec:s(r[4]),zone:s(r[13]),description:name,unit:unit,
           contract_qty:q,mat_price:m,labor_price:l,expense_price:x,unit_price:tot,
@@ -316,7 +332,36 @@ async function handleContractUpload(input){
         var k=o.menu+'|'+o.cat+'|'+o.spec+'|'+o.zone;
         return billed[k]!==undefined && Math.abs(billed[k]-o.unit_price)>=0.005;
       });
-      var msg='읽어들인 항목: '+out.length+'건\n계약금액 합계: '+won(sum)+'원\n\n';
+      /* ★ 총계 대조 — 행 누락/중복을 잡는 유일한 방법
+         내역서의 "직접공사비 계"를 입력받아 합계와 맞춰본다. 항목행 판별을 잘못하면
+         조용히 수억이 어긋나는데(실측 335,858,619원), 이 대조가 그걸 잡아낸다.
+         비워두고 넘어갈 수는 있지만 권하지 않는다. */
+      var expected = prompt(
+        '읽어들인 항목: '+out.length+'건\n계약금액 합계: '+won(sum)+' 원\n\n'
+        +'내역서의 [직접공사비 계] 금액을 입력하면 대조합니다.\n'
+        +'(숫자만. 건너뛰려면 비운 채 확인)', '');
+      if(expected===null) return;
+      expected = String(expected).replace(/[^0-9.-]/g,'');
+      if(expected!==''){
+        var diff = Math.round(sum - Number(expected));
+        if(Math.abs(diff) > 1){
+          alert('총계가 맞지 않습니다. 저장을 중단합니다.\n\n'
+            +'  업로드 합계 : '+won(sum)+' 원\n'
+            +'  내역서 총계 : '+won(Number(expected))+' 원\n'
+            +'  차이        : '+won(diff)+' 원\n\n'
+            +(diff>0 ? '소계·공종 행이 섞여 들어왔을 수 있습니다.'
+                     : '항목이 누락됐을 수 있습니다. 합계단가가 있는 행을 모두 넣었는지 확인하세요.'));
+          return;
+        }
+      }
+
+      var msg='읽어들인 항목: '+out.length+'건\n계약금액 합계: '+won(sum)+'원'
+            + (expected!=='' ? '  (내역서 총계와 일치 ✓)' : '  (총계 대조 안 함)') + '\n\n';
+      if(warns.length){
+        msg+='⚠️ 확인이 필요한 행 '+warns.length+'건\n   '
+           + warns.slice(0,8).join('\n   ')
+           + (warns.length>8?'\n   … 외 '+(warns.length-8)+'건':'') + '\n\n';
+      }
       if(changed.length){
         msg+='⚠️ 이미 기성에 반영된 항목 '+changed.length+'건의 단가가 바뀝니다.\n'
            +'   마감된 회차 금액은 그대로지만, 열려 있는 회차와 공정률이 새 단가로 다시 계산됩니다.\n'
