@@ -5,9 +5,49 @@
 <meta name="viewport" content="width=1400, user-scalable=yes, maximum-scale=5"/>
 <title>기성관리</title>
 <link rel="icon" type="image/png" href="https://workreportdaesun.github.io/report/app/icon-192.png"/>
-<!-- 계약단가·기성금액을 다루므로 admin 전용. nav-fab.js의 min 값도 'admin'으로 맞춰야 한다
-     (어긋나면 목록엔 뜨는데 눌러도 게이트가 도로 튕겨낸다). -->
-<script src="/report/role-gate.js" data-require="admin" data-login="/report/app/login.html"></script>
+<!-- 이 앱은 다른 앱들과 달리 계정 연동을 하지 않는다(2026-08-14 사용자 확정).
+     공무 담당자만 공용 암호로 들어와서 관리하는 독립 도구다.
+       · role-gate.js  안 씀 — members 등급/localStorage.member_role 에 의존하지 않는다
+       · nav-fab.js    안 씀 — 앱 간 이동 목록은 계정 등급으로 걸러지므로 여기엔 맞지 않는다
+       · Supabase 는 "값만 가져오는" 용도 (daily_reports·app_settings 읽기 + 기성 테이블 읽기/쓰기)
+     잠금 키도 gallery/progress 가 쓰는 wr_admin_unlocked 와 분리했다 —
+     그쪽 암호를 아는 사람이 계약단가까지 보게 되면 안 되기 때문. -->
+<script>
+(function(){
+  var PIN = '0000';                       // ← 공무 담당자 암호. 바꾸려면 이 값만 고치면 된다.
+  var KEY = 'wr_payment_unlocked';
+  if(localStorage.getItem(KEY)==='1') return;
+  document.documentElement.style.visibility='hidden';   // 통과 전에는 내용이 스치지 않게
+
+  document.addEventListener('DOMContentLoaded', function(){
+    var w=document.createElement('div');
+    w.style.cssText='position:fixed;inset:0;background:#0d1117;z-index:2147483000;display:flex;'
+      +'align-items:center;justify-content:center;padding:20px;font-family:Arial,"Malgun Gothic",sans-serif;';
+    w.innerHTML=
+      '<div style="background:#161b22;border:1px solid #30363d;border-radius:12px;padding:28px 24px;max-width:340px;width:100%;text-align:center;">'
+      +'<div style="font-size:32px;margin-bottom:10px;">💰</div>'
+      +'<div style="font-size:15px;font-weight:700;color:#e6edf3;margin-bottom:6px;">기성관리</div>'
+      +'<div style="font-size:13px;color:#8b949e;margin-bottom:16px;line-height:1.5;">공무 담당자 전용 화면입니다<br>암호를 입력하세요</div>'
+      +'<input type="password" id="pgPin" inputmode="numeric" placeholder="암호" style="width:100%;background:#0d1117;'
+      +'border:1px solid #30363d;border-radius:8px;color:#e6edf3;font-size:16px;padding:10px 12px;text-align:center;'
+      +'margin-bottom:10px;box-sizing:border-box;">'
+      +'<button type="button" id="pgBtn" style="width:100%;background:#2f81f7;border:none;border-radius:8px;color:#fff;'
+      +'font-size:14px;font-weight:700;padding:10px;cursor:pointer;">확인</button>'
+      +'<div id="pgErr" style="color:#f85149;font-size:12px;margin-top:8px;display:none;">암호가 틀렸습니다</div>'
+      +'</div>';
+    document.body.appendChild(w);
+    document.documentElement.style.visibility='';
+    var inp=document.getElementById('pgPin');
+    function unlock(){
+      if(inp.value.trim()===PIN){ localStorage.setItem(KEY,'1'); w.remove(); }
+      else { document.getElementById('pgErr').style.display='block'; inp.value=''; inp.focus(); }
+    }
+    document.getElementById('pgBtn').onclick=unlock;
+    inp.addEventListener('keydown',function(e){ if(e.key==='Enter') unlock(); });
+    setTimeout(function(){ inp.focus(); },100);
+  });
+})();
+</script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 :root{
@@ -125,7 +165,8 @@ tr.total .fx{background:var(--head-bg);}
 <script>
 document.getElementById('hdrDate').textContent =
   new Date().toLocaleDateString('ko-KR',{year:'numeric',month:'2-digit',day:'2-digit',weekday:'short'});
-(function(){ var p=localStorage.getItem('member_project'); if(p) document.getElementById('hdrProject').textContent=p; })();
+/* 프로젝트명은 계정(member_project)이 아니라 공용 설정에서 읽는다 — 이 앱은 계정 연동을 안 한다. */
+var PROJECT_NAME='S-OIL SHAHEEN Project 계장공사 3공구(PKG-1)';
 
 var SUPABASE_URL='https://feymoykefzfwucbrqoja.supabase.co';
 var SUPABASE_KEY='sb_publishable_ANT6G7_ka3IPHRk_4vLtBg_7G9NWW7i';
@@ -473,12 +514,15 @@ async function closePeriod(){
   var p=periods.find(function(x){ return x.seq_no===seq; });
   if(!p){ alert('마감할 회차를 선택하세요.'); return; }
   if(p.status!=='open'){ alert('이미 마감된 회차입니다.'); return; }
-  var actor=localStorage.getItem('member_id');
-  if(!actor){ alert('로그인 정보가 없습니다.'); return; }
+  /* 계정 연동을 하지 않으므로 담당자는 이름만 남긴다(감사 추적용). */
+  var actor=localStorage.getItem('wr_payment_actor')||'';
+  actor=(prompt('마감 담당자 이름을 입력하세요 (기록용)', actor)||'').trim();
+  if(!actor){ return; }
+  localStorage.setItem('wr_payment_actor', actor);
   if(!confirm('제'+seq+'회 기성을 마감합니다.\n\n· 기간: '+p.period_from+' ~ '+p.period_to+'\n'
     +'· 승인된 일보만 반영되고, 반영된 일보는 수정 잠금됩니다\n'
     +'· 마감 후에는 금액이 고정되어 단가를 바꿔도 변하지 않습니다\n\n계속할까요?')) return;
-  var r=await sbClient.rpc('close_payment_period',{p_period_id:p.id,p_actor_id:actor});
+  var r=await sbClient.rpc('close_payment_period',{p_period_id:p.id,p_actor:actor});
   if(r.error){ alert('마감 실패: '+r.error.message); return; }
   var d=Array.isArray(r.data)?r.data[0]:r.data;
   alert('제'+seq+'회 마감 완료\n\n· 편입 일보: '+(d?d.linked_reports:0)+'건\n· 기성 항목: '
@@ -528,7 +572,7 @@ function exportPaymentExcel(){
 
   var aoa=[
     ['', (p?p.period_to.slice(0,7).replace('-','년 ')+'월':'')+' ( 제'+cur+'회 기성 )'],
-    ['', 'Project : '+(localStorage.getItem('member_project')||'')],
+    ['', 'Project : '+PROJECT_NAME],
     ['', 'Discipline : 계장','','','','','','[Unit : 원]'],
     h4,h5,h6
   ];
@@ -571,7 +615,7 @@ function exportPaymentExcel(){
 loadContract();
 </script>
 
-<!-- 앱 공용 이동 버튼. 파일은 report 저장소에 하나만 두고 각 앱이 절대경로로 불러온다. -->
-<script>var _nf=document.createElement('script'); _nf.src='/report/nav-fab.js'; document.body.appendChild(_nf);</script>
+<!-- 앱 간 이동 버튼(nav-fab.js)은 넣지 않는다 — 목록이 계정 등급으로 걸러지는 방식이라
+     계정 연동을 하지 않는 이 앱에는 맞지 않는다. 주소로 직접 들어와서 쓴다. -->
 </body>
 </html>
