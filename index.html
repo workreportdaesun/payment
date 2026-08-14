@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=1400, user-scalable=yes, maximum-scale=5"/>
+<title>기성관리</title>
+<link rel="icon" type="image/png" href="https://workreportdaesun.github.io/report/app/icon-192.png"/>
+<!-- 계약단가·기성금액을 다루므로 admin 전용. nav-fab.js의 min 값도 'admin'으로 맞춰야 한다
+     (어긋나면 목록엔 뜨는데 눌러도 게이트가 도로 튕겨낸다). -->
+<script src="/report/role-gate.js" data-require="admin" data-login="/report/app/login.html"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --bg:#F0F4F8; --card:#fff; --card-bd:#D1DCE8; --ink:#1A2332; --lbl:#5A7A9A; --field-bd:#C8D8E8; --head-bg:#DCE6F2;
+  --field-bg:#F7FAFC; --brand-1:#1E3A5F; --brand-2:#2E5F9E;
+  --ok:#27AE60; --err:#E74C3C; --warn:#F39C12;
+  --font-body:Arial,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+  --font-mono:"SFMono-Regular",Consolas,Menlo,monospace;
+}
+body{background:var(--bg); color:var(--ink); font-family:var(--font-body); min-height:100vh;}
+.wrap{width:100%; padding:24px 20px 60px;}
+.hdr{background:linear-gradient(135deg,var(--brand-1),var(--brand-2)); padding:16px 20px; margin-bottom:20px; color:#fff; display:flex; justify-content:space-between; align-items:center;}
+.hdr h1{font-size:19px; font-weight:800;}
+.hdr .proj{font-size:12px; opacity:.85; margin-top:2px;}
+
+.tabs{display:flex; gap:6px; margin-bottom:14px; flex-wrap:wrap;}
+.tab{border:1px solid var(--card-bd); background:var(--card); color:var(--lbl); padding:7px 18px; font-size:13px; font-weight:700; cursor:pointer; font-family:inherit;}
+.tab.active{background:var(--brand-2); color:#fff; border-color:var(--brand-2);}
+.pane{display:none;} .pane.active{display:block;}
+
+.bar{display:flex; gap:8px; flex-wrap:wrap; align-items:center; background:var(--card); border:1px solid var(--card-bd); padding:10px 12px; margin-bottom:8px;}
+.btn{border:1px solid var(--field-bd); background:var(--field-bg); color:var(--ink); padding:5px 13px; font-size:12px; font-weight:700; cursor:pointer; font-family:inherit;}
+.btn-pri{background:var(--brand-2); color:#fff; border-color:var(--brand-2);}
+.btn:disabled{opacity:.45; cursor:not-allowed;}
+.f{background:var(--field-bg); border:1px solid var(--field-bd); color:var(--ink); font-size:12px; padding:5px 8px; font-family:inherit; height:28px;}
+.spacer{margin-left:auto; font-size:12px; color:var(--lbl);}
+
+.cards{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;}
+.card{flex:1; min-width:135px; background:var(--card); border:1px solid var(--card-bd); padding:9px 12px;}
+.card .k{font-size:11px; color:var(--lbl);}
+.card .v{font-size:16px; font-weight:800; font-variant-numeric:tabular-nums; margin-top:2px;}
+.card.hl{border-color:var(--brand-2);} .card.hl .v{color:var(--brand-2);}
+
+.tablewrap{overflow:auto; border:1px solid var(--card-bd); max-height:calc(100vh - 330px);}
+table.dt{border-collapse:separate; border-spacing:0; width:100%; font-size:13px;}
+table.dt th, table.dt td{border-bottom:1px solid var(--card-bd); border-right:1px solid var(--card-bd); padding:5px 8px; white-space:nowrap; text-align:left;}
+table.dt thead th{position:sticky; top:0; background:var(--head-bg); font-size:12px; font-weight:800; z-index:2;}
+table.dt td.num, table.dt th.num{text-align:right; font-variant-numeric:tabular-nums;}
+table.dt tbody tr:hover{background:var(--field-bg);}
+tr.total{font-weight:800; background:var(--head-bg);}
+/* 회차 열이 늘어 가로 스크롤이 생겨도 품명이 계속 보이도록 좌측 고정 */
+.fx{position:sticky; background:var(--card); z-index:3;}
+thead .fx{z-index:4; background:var(--head-bg);}
+tr.total .fx{background:var(--head-bg);}
+.fx1{left:0;}   .fx2{left:118px;} .fx3{left:230px; box-shadow:1px 0 0 var(--card-bd);}
+.seqcol{background:rgba(46,95,158,.05);}
+.sumcol{background:var(--field-bg);}
+.note{font-size:11px; color:var(--lbl); line-height:1.6; margin-top:8px;}
+.empty{text-align:center; color:var(--lbl); padding:26px 10px; font-size:13px;}
+.pill{display:inline-block; font-size:11px; font-weight:700; padding:2px 8px; border-radius:20px;}
+.pill-open{background:#FDF3E3; color:#B9770E;} .pill-closed{background:#EAF0F8; color:var(--brand-2);}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hdr">
+    <div>
+      <h1>💰 기성관리</h1>
+      <div class="proj" id="hdrProject">S-OIL SHAHEEN Project 계장공사 3공구(PKG-1)</div>
+    </div>
+    <div style="font-size:12px;opacity:.85;" id="hdrDate"></div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" onclick="showTab(this,'contract')">계약내역</button>
+    <button class="tab" onclick="showTab(this,'payment')">기성</button>
+  </div>
+
+  <!-- ── 계약내역 ───────────────────────────────────────────────── -->
+  <div class="pane active" id="pane-contract">
+    <div class="bar">
+      <button class="btn" onclick="downloadContractTemplate()">⬇ 업로드 서식 받기</button>
+      <button class="btn btn-pri" onclick="document.getElementById('ctFile').click()">⬆ 계약내역 업로드</button>
+      <input type="file" id="ctFile" accept=".xlsx,.xls" style="display:none;" onchange="handleContractUpload(this)">
+      <select class="f" id="ctDisc" onchange="renderContract()"><option value="">전체 공종</option></select>
+      <select class="f" id="ctCat" onchange="renderContract()"><option value="">전체 작업분류</option></select>
+      <input class="f" type="text" id="ctKw" oninput="renderContract()" placeholder="품명/규격 검색" style="width:160px;">
+      <span class="spacer" id="ctSummary"></span>
+    </div>
+    <div class="tablewrap">
+      <table class="dt"><thead><tr>
+        <th>공종</th><th>작업분류</th><th>품명</th><th>규격</th><th>구역</th><th>단위</th>
+        <th class="num">계약수량</th><th class="num">재료비</th><th class="num">노무비</th>
+        <th class="num">경비</th><th class="num">합계단가</th><th class="num">계약금액</th>
+      </tr></thead><tbody id="ctRows"><tr><td colspan="12" class="empty">불러오는 중...</td></tr></tbody></table>
+    </div>
+    <div class="note">
+      서식의 <b>작업분류</b> 열은 작업일보의 작업분류 목록에서 고릅니다(작업일보에서 추가·삭제하면 다음 서식부터 반영). 이 열이 비면 그 행은 실적과 연결되지 않아 기성에서 빠집니다.
+    </div>
+  </div>
+
+  <!-- ── 기성 ──────────────────────────────────────────────────── -->
+  <div class="pane" id="pane-payment">
+    <div class="bar">
+      <select class="f" id="pmPeriod" onchange="renderPayment()" style="font-weight:700;"></select>
+      <input class="f" type="month" id="pmMonth">
+      <button class="btn" onclick="createPeriod()">+ 회차 생성</button>
+      <button class="btn btn-pri" onclick="closePeriod()">🔒 마감</button>
+      <button class="btn" onclick="exportPaymentExcel()">⬇ 내역서 내보내기</button>
+      <select class="f" id="pmDisc" onchange="renderPayment()"><option value="">전체 공종</option></select>
+      <span class="spacer" id="pmSummary"></span>
+    </div>
+    <div class="cards" id="pmCards"></div>
+    <div class="tablewrap">
+      <table class="dt"><thead id="pmHead"></thead><tbody id="pmRows"><tr><td class="empty">불러오는 중...</td></tr></tbody></table>
+    </div>
+    <div class="note">
+      회차가 늘면 <b>제1회 · 제2회 …</b> 열이 자동으로 추가됩니다. 열린 회차는 승인된 일보에서 실시간 계산되고, 마감한 회차는 그때 확정된 금액이 고정됩니다(나중에 단가를 바꿔도 과거 청구액은 변하지 않습니다).
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script>
+document.getElementById('hdrDate').textContent =
+  new Date().toLocaleDateString('ko-KR',{year:'numeric',month:'2-digit',day:'2-digit',weekday:'short'});
+(function(){ var p=localStorage.getItem('member_project'); if(p) document.getElementById('hdrProject').textContent=p; })();
+
+var SUPABASE_URL='https://feymoykefzfwucbrqoja.supabase.co';
+var SUPABASE_KEY='sb_publishable_ANT6G7_ka3IPHRk_4vLtBg_7G9NWW7i';
+var sbClient=(typeof supabase!=='undefined')?supabase.createClient(SUPABASE_URL,SUPABASE_KEY):null;
+
+function showTab(btn,key){
+  document.querySelectorAll('.tab').forEach(function(b){ b.classList.remove('active'); });
+  btn.classList.add('active');
+  document.querySelectorAll('.pane').forEach(function(p){ p.classList.remove('active'); });
+  document.getElementById('pane-'+key).classList.add('active');
+  if(key==='contract') loadContract();
+  if(key==='payment') loadPayment();
+}
+function esc(v){ return String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function won(n){ return (Math.round(Number(n)||0)).toLocaleString('ko-KR'); }
+/* 물량은 소수 2자리까지 살린다 — 반올림하면 전선관 120.50m 가 121 로 보인다 */
+function qty(n){ return (Number(n)||0).toLocaleString('ko-KR',{maximumFractionDigits:2}); }
+function num(v){ var n=Number(v); return isFinite(n)?n:0; }
+function fillSel(id,all,list){
+  var s=document.getElementById(id); if(!s) return; var keep=s.value;
+  s.innerHTML='<option value="">'+all+'</option>'+list.map(function(v){ return '<option value="'+esc(v)+'">'+esc(v)+'</option>'; }).join('');
+  if(list.indexOf(keep)>=0) s.value=keep;
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   작업분류 목록 — app_settings.cats_by_menu(시공)
+   작업일보에서 추가·삭제하면 여기에 그대로 따라온다.
+   ══════════════════════════════════════════════════════════════════ */
+var catList=[];
+async function loadCats(){
+  if(!sbClient) return;
+  try{
+    var r=await sbClient.from('app_settings').select('cats_by_menu').eq('id','global').single();
+    var seen={}; catList=[];
+    (((r.data||{}).cats_by_menu||{})['시공']||[]).forEach(function(c){ if(!seen[c]){ seen[c]=1; catList.push(c); } });
+  }catch(e){}
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   계약내역 (contract_items)
+
+   서식 구조는 실제 기성내역서("4. 내역서" 시트)의 항목행을 그대로 옮긴 것이다.
+     항목행 판별 : No.가 비어 있고 Unit·Q'ty에 값이 있는 행
+     단가 구조   : Material Cost / Labor Cost / Expense + Total
+
+   ★ 단가를 3분할해서 받는 이유
+     간접공사비 7종(안전관리비·고용보험·건강보험·국민연금·노인장기요양·
+     건설기계보증·공과잡비)이 전부 "직접노무비 × 요율"로 산출된다.
+     노무비를 따로 안 들고 있으면 간접비를 아예 계산할 수 없다.
+   ══════════════════════════════════════════════════════════════════ */
+var DISCIPLINES=[
+  'Field Instrument','Instrument Cables','Instrument Duct & Tray',
+  'Instrument Cable Gland & Conduit','JUNCTION BOX & FITTING','AIR PIPE & FITTINGS',
+  'HOOK-UP(PROCESS, STEAM AND ANALYZER)','Support Material','MISCELLANEOUS','Other Works'
+];
+var HEADERS=['구분','공종','항목번호','품명','규격','단위','계약수량',
+             '재료비단가','노무비단가','경비단가','합계단가','계약금액','작업분류','구역','WBS','비고'];
+
+function downloadContractTemplate(){
+  if(typeof XLSX==='undefined'){ alert('엑셀 모듈을 불러오지 못했습니다.'); return; }
+  if(!catList.length){ alert('작업분류 목록을 아직 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.'); return; }
+  var guide=[
+    ['계약내역 업로드 서식'],[''],
+    ['1. "계약내역" 시트의 3행부터 입력하세요. 1~2행(안내·헤더)은 지우지 마세요.'],
+    ['2. 기성내역서에서 실제 항목행만 복사해 오세요.'],
+    ['   (항목번호 No.가 비어 있고 단위·수량에 값이 있는 행이 실제 항목입니다.'],
+    ['    (1) (1.1) (1.1.4) 같은 소계·헤더 행은 넣지 마세요.)'],
+    ['3. [작업분류]는 반드시 채워야 합니다. 비면 작업일보 실적과 연결되지 않아'],
+    ['   기성 계산에서 빠집니다. → "목록" 시트에서 복사해 붙여넣으세요.'],
+    ['   오타가 있으면 업로드할 때 몇 행이 틀렸는지 알려주고 저장을 막습니다.'],
+    ['4. [합계단가]는 재료비+노무비+경비와 일치해야 합니다. 비우면 자동 합산합니다.'],
+    ['5. [구역]은 SCC / U&O 처럼 구역별 계약일 때만 넣고, 전 구역 공통이면 비우세요.'],
+    [''],
+    ['※ 노무비를 따로 받는 이유: 간접공사비(안전관리비·고용보험·건강보험·'],
+    ['   국민연금 등)가 전부 직접노무비 × 요율로 산출되기 때문입니다.']
+  ];
+  var sample=[
+    ['A. 직접공사비','Instrument Duct & Tray','(3.1.1)','CABLE DUCT','200W x 100H','M',1306,0,28998,0,28998,37871388,'CABLE DUCT','','',''],
+    ['A. 직접공사비','Instrument Cable Gland & Conduit','(4.2.1)','CONDUIT PIPE','54mm','M',420,0,25000,0,25000,10500000,'CONDUIT PIPE','SCC','',''],
+    ['A. 직접공사비','HOOK-UP(PROCESS, STEAM AND ANALYZER)','(7.1)','HOOK UP','PROCESS','SET',150,0,68000,0,68000,10200000,'HOOK UP','','','']
+  ];
+  var wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(guide),'안내');
+  var ws=XLSX.utils.aoa_to_sheet([['※ 3행부터 입력하세요. [작업분류]는 필수입니다.'],HEADERS].concat(sample));
+  ws['!cols']=[{wch:14},{wch:34},{wch:11},{wch:30},{wch:20},{wch:7},{wch:11},{wch:12},{wch:12},{wch:11},{wch:12},{wch:15},{wch:18},{wch:9},{wch:12},{wch:16}];
+  XLSX.utils.book_append_sheet(wb,ws,'계약내역');
+  /* 엑셀 드롭다운(데이터 유효성)은 SheetJS 커뮤니티 버전이 쓰기를 지원하지 않는다.
+     대신 목록 시트를 두고 복사해 쓰게 하며, 오타는 업로드 검증에서 행 번호와 함께 잡는다. */
+  var L=[['작업분류 (M열에 사용)','공종 (B열에 사용)']];
+  for(var i=0;i<Math.max(catList.length,DISCIPLINES.length);i++) L.push([catList[i]||'',DISCIPLINES[i]||'']);
+  var wl=XLSX.utils.aoa_to_sheet(L); wl['!cols']=[{wch:24},{wch:40}];
+  XLSX.utils.book_append_sheet(wb,wl,'목록');
+  XLSX.writeFile(wb,'계약내역_업로드서식_'+new Date().toISOString().slice(0,10)+'.xlsx');
+}
+
+async function handleContractUpload(input){
+  var file=input.files && input.files[0]; if(!file) return;
+  var rd=new FileReader();
+  rd.onload=async function(e){
+    try{
+      var wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});
+      var sn=wb.SheetNames.indexOf('계약내역')>=0?'계약내역':wb.SheetNames.filter(function(s){return s!=='안내'&&s!=='목록';})[0];
+      if(!sn){ alert('"계약내역" 시트를 찾을 수 없습니다. 서식 파일을 사용해 주세요.'); return; }
+      var rows=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1});
+      var known={}; catList.forEach(function(c){ known[c]=1; });
+      var out=[],errs=[],sum=0;
+      rows.slice(2).forEach(function(r,i){
+        if(!r||r.every(function(v){return v===undefined||v===null||v==='';})) return;
+        var n=i+3, s=function(v){ return v==null?'':String(v).trim(); };
+        var name=s(r[3]), unit=s(r[5]), cat=s(r[12]);
+        var q=num(r[6]), m=num(r[7]), l=num(r[8]), x=num(r[9]);
+        var tot=num(r[10])||(m+l+x), amt=num(r[11]);
+        if(!name){ errs.push(n+'행: 품명이 비었습니다'); return; }
+        if(!unit){ errs.push(n+'행: 단위가 비었습니다 ('+name+')'); return; }
+        if(!cat){ errs.push(n+'행: 작업분류가 비었습니다 ('+name+') — 실적과 연결되지 않습니다'); return; }
+        if(!known[cat]){ errs.push(n+'행: 작업분류 "'+cat+'"는 작업일보에 없는 값입니다'); return; }
+        if(Math.abs(tot-(m+l+x))>=0.005){ errs.push(n+'행: 합계단가('+tot+')가 재료비+노무비+경비('+(m+l+x)+')와 다릅니다'); return; }
+        sum += amt||(q*tot);
+        out.push({menu:'시공',cat:cat,spec:s(r[4]),zone:s(r[13]),description:name,unit:unit,
+          contract_qty:q,mat_price:m,labor_price:l,expense_price:x,unit_price:tot,
+          group1:s(r[0])||'A. 직접공사비',discipline:s(r[1]),item_no:s(r[2]),
+          is_lot:(unit.toUpperCase()==='LOT'||unit==='식'),
+          wbs:s(r[14])||null,remark:s(r[15])||null,sort_no:i+1,active:true,
+          updated_at:new Date().toISOString()});
+      });
+      if(errs.length){
+        alert('업로드할 수 없습니다. 아래 '+errs.length+'건을 먼저 수정해 주세요.\n\n'
+          +errs.slice(0,25).join('\n')+(errs.length>25?'\n… 외 '+(errs.length-25)+'건':'')); return;
+      }
+      if(!out.length){ alert('읽어들인 항목이 없습니다. 3행부터 데이터가 있는지 확인해 주세요.'); return; }
+
+      /* 이미 기성에 쓰인 항목의 단가를 바꾸면 열린 회차와 공정률이 다시 계산된다 */
+      var billed=await billedPrices();
+      var changed=out.filter(function(o){
+        var k=o.menu+'|'+o.cat+'|'+o.spec+'|'+o.zone;
+        return billed[k]!==undefined && Math.abs(billed[k]-o.unit_price)>=0.005;
+      });
+      var msg='읽어들인 항목: '+out.length+'건\n계약금액 합계: '+won(sum)+'원\n\n';
+      if(changed.length){
+        msg+='⚠️ 이미 기성에 반영된 항목 '+changed.length+'건의 단가가 바뀝니다.\n'
+           +'   마감된 회차 금액은 그대로지만, 열려 있는 회차와 공정률이 새 단가로 다시 계산됩니다.\n'
+           +'   '+changed.slice(0,5).map(function(o){return o.cat+'/'+o.spec;}).join(', ')
+           +(changed.length>5?' 외 '+(changed.length-5)+'건':'')+'\n\n';
+      }
+      if(!confirm(msg+'저장하시겠습니까? (같은 공종·분류·규격·구역은 덮어씁니다)')) return;
+
+      var res=await sbClient.from('contract_items').upsert(out,{onConflict:'menu,cat,spec,zone'});
+      if(res.error){
+        alert(/contract_items|42P01/.test(res.error.message||res.error.code||'')
+          ? '계약내역 테이블이 아직 서버에 없습니다.\nSUPABASE_기성계층_ALL.sql 을 먼저 실행해 주세요.'
+          : '저장 실패: '+res.error.message);
+        return;
+      }
+      alert('저장 완료 — '+out.length+'건 반영됐습니다.');
+      ctLoaded=false; loadContract();
+    }catch(err){ alert('엑셀 파일을 읽는 중 오류가 발생했습니다: '+(err.message||err)); }
+    finally{ input.value=''; }
+  };
+  rd.readAsArrayBuffer(file);
+}
+async function billedPrices(){
+  var map={};
+  try{
+    var pl=await sbClient.from('payment_lines').select('contract_id');
+    if(pl.error||!pl.data||!pl.data.length) return map;
+    var ci=await sbClient.from('contract_items').select('id,menu,cat,spec,zone,unit_price')
+      .in('id', pl.data.map(function(x){return x.contract_id;}));
+    if(ci.error||!ci.data) return map;
+    ci.data.forEach(function(c){ map[c.menu+'|'+c.cat+'|'+(c.spec||'')+'|'+(c.zone||'')]=num(c.unit_price); });
+  }catch(e){}
+  return map;
+}
+
+var ctLoaded=false, ctRows=[];
+async function loadContract(){
+  if(ctLoaded) return;
+  await loadCats();
+  var w=document.getElementById('ctRows');
+  if(!sbClient){ w.innerHTML='<tr><td colspan="12" class="empty">연결 실패</td></tr>'; return; }
+  var r=await sbClient.from('contract_items').select('*').order('sort_no');
+  if(r.error){
+    w.innerHTML='<tr><td colspan="12" class="empty">계약내역 테이블이 아직 없습니다. SUPABASE_기성계층_ALL.sql 을 실행해 주세요.</td></tr>';
+    return;
+  }
+  ctRows=r.data||[]; ctLoaded=true;
+  var d={},c={}; ctRows.forEach(function(x){ if(x.discipline)d[x.discipline]=1; if(x.cat)c[x.cat]=1; });
+  fillSel('ctDisc','전체 공종',Object.keys(d).sort());
+  fillSel('ctCat','전체 작업분류',Object.keys(c).sort());
+  renderContract();
+}
+function renderContract(){
+  var w=document.getElementById('ctRows');
+  if(!ctRows.length){
+    w.innerHTML='<tr><td colspan="12" class="empty">등록된 계약내역이 없습니다. "업로드 서식 받기"로 시작하세요.</td></tr>';
+    document.getElementById('ctSummary').textContent=''; return;
+  }
+  var d=document.getElementById('ctDisc').value, c=document.getElementById('ctCat').value;
+  var kw=document.getElementById('ctKw').value.trim().toLowerCase();
+  var rows=ctRows.filter(function(x){
+    if(d&&x.discipline!==d) return false;
+    if(c&&x.cat!==c) return false;
+    if(kw&&[x.description,x.spec].join(' ').toLowerCase().indexOf(kw)===-1) return false;
+    return true;
+  });
+  var sum=rows.reduce(function(a,x){ return a+num(x.contract_amount); },0);
+  w.innerHTML=rows.map(function(x){
+    return '<tr><td>'+esc(x.discipline||'-')+'</td><td>'+esc(x.cat||'-')+'</td><td>'+esc(x.description||'-')+'</td>'
+      +'<td>'+esc(x.spec||'-')+'</td><td>'+esc(x.zone||'공통')+'</td><td>'+esc(x.unit||'-')+'</td>'
+      +'<td class="num">'+qty(x.contract_qty)+'</td><td class="num">'+won(x.mat_price)+'</td>'
+      +'<td class="num">'+won(x.labor_price)+'</td><td class="num">'+won(x.expense_price)+'</td>'
+      +'<td class="num">'+won(x.unit_price)+'</td><td class="num">'+won(x.contract_amount)+'</td></tr>';
+  }).join('')+'<tr class="total"><td colspan="11">합계</td><td class="num">'+won(sum)+'</td></tr>';
+  document.getElementById('ctSummary').textContent=rows.length+'건 · '+won(sum)+'원';
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   기성 — 회차별 누적
+
+   회차를 payment_lines 의 "행"으로 쌓고 화면에서 seq_no 를 "열"로 피벗한다.
+   그래서 회차가 1회든 30회든 코드가 같다.
+     엑셀 : 회차마다 9열씩 추가 → 제7회 내역서가 1117행 × 104열
+     여기 : 회차마다 행만 추가  → 열은 화면에서 생성
+   회차 기간은 월 단위.
+   ══════════════════════════════════════════════════════════════════ */
+var pmLoaded=false, periods=[], byPeriod=[], contracts=[];
+async function loadPayment(){
+  if(pmLoaded) return;
+  await loadCats();
+  var w=document.getElementById('pmRows');
+  if(!sbClient){ w.innerHTML='<tr><td class="empty">연결 실패</td></tr>'; return; }
+  var p=await sbClient.from('payment_periods').select('*').order('seq_no');
+  if(p.error){
+    w.innerHTML='<tr><td class="empty">기성 테이블이 아직 없습니다. SUPABASE_기성계층_ALL.sql 을 실행해 주세요.</td></tr>';
+    return;
+  }
+  periods=p.data||[];
+  var c=await sbClient.from('contract_items').select('*').eq('active',true).order('sort_no');
+  contracts=c.error?[]:(c.data||[]);
+  var b=await sbClient.from('v_payment_by_period').select('*');
+  byPeriod=b.error?[]:(b.data||[]);
+  pmLoaded=true;
+
+  var sel=document.getElementById('pmPeriod');
+  sel.innerHTML=periods.length
+    ? periods.map(function(x){ return '<option value="'+x.seq_no+'">제'+x.seq_no+'회 ('+x.period_from+' ~ '+x.period_to+')'+(x.status==='open'?' · 진행중':' · 마감')+'</option>'; }).join('')
+    : '<option value="">회차 없음</option>';
+  if(periods.length) sel.value=periods[periods.length-1].seq_no;
+  var d={}; contracts.forEach(function(x){ if(x.discipline)d[x.discipline]=1; });
+  fillSel('pmDisc','전체 공종',Object.keys(d).sort());
+  document.getElementById('pmMonth').value=new Date().toISOString().slice(0,7);
+  renderPayment();
+}
+
+/* 항목 × 회차 집계 — 전회누계 / 회차별 / 금회 / 누계 / 잔여 */
+function buildRows(curSeq){
+  var by={};
+  byPeriod.forEach(function(v){ (by[v.contract_id]=by[v.contract_id]||{})[v.seq_no]=v; });
+  return contracts.map(function(c){
+    var per=by[c.id]||{}, pq=0,pa=0,tq=0,ta=0;
+    Object.keys(per).forEach(function(s){
+      var seq=Number(s), v=per[s];
+      if(seq<curSeq){ pq+=num(v.qty_this); pa+=num(v.amount_this); }
+      else if(seq===curSeq){ tq=num(v.qty_this); ta=num(v.amount_this); }
+    });
+    var ca=num(c.contract_amount), cq=pq+tq, cam=pa+ta;
+    return {c:c,per:per,prevQty:pq,prevAmt:pa,thisQty:tq,thisAmt:ta,cumQty:cq,cumAmt:cam,
+            pct: ca>0?(cam/ca*100):0, remainQty:num(c.contract_qty)-cq, remainAmt:ca-cam};
+  });
+}
+
+function renderPayment(){
+  var head=document.getElementById('pmHead'), w=document.getElementById('pmRows');
+  if(!contracts.length){
+    head.innerHTML=''; document.getElementById('pmCards').innerHTML='';
+    w.innerHTML='<tr><td class="empty">계약내역이 없습니다. "계약내역" 탭에서 먼저 업로드하세요.</td></tr>';
+    document.getElementById('pmSummary').textContent=''; return;
+  }
+  var cur=Number(document.getElementById('pmPeriod').value)||0;
+  var disc=document.getElementById('pmDisc').value;
+  var rows=buildRows(cur).filter(function(r){ return !disc||r.c.discipline===disc; });
+  var seqs=periods.filter(function(p){ return p.seq_no<=cur; }).map(function(p){ return p.seq_no; });
+
+  head.innerHTML='<tr>'
+    +'<th class="fx fx1">공종</th><th class="fx fx2">작업분류</th><th class="fx fx3">품명</th>'
+    +'<th>규격</th><th>단위</th><th class="num">계약수량</th><th class="num">단가</th><th class="num">계약금액</th>'
+    + seqs.map(function(s){ return '<th class="num seqcol">제'+s+'회</th>'; }).join('')
+    +'<th class="num sumcol">전회누계</th><th class="num sumcol">금회기성</th>'
+    +'<th class="num sumcol">누계기성</th><th class="num sumcol">진행률</th><th class="num sumcol">잔여기성</th></tr>';
+
+  var t={ca:0,pv:0,cu:0,cm:0,rm:0};
+  w.innerHTML=rows.map(function(r){
+    t.ca+=num(r.c.contract_amount); t.pv+=r.prevAmt; t.cu+=r.thisAmt; t.cm+=r.cumAmt; t.rm+=r.remainAmt;
+    return '<tr>'
+      +'<td class="fx fx1">'+esc(r.c.discipline||'-')+'</td>'
+      +'<td class="fx fx2">'+esc(r.c.cat||'-')+'</td>'
+      +'<td class="fx fx3">'+esc(r.c.description||'-')+'</td>'
+      +'<td>'+esc(r.c.spec||'-')+'</td><td>'+esc(r.c.unit||'-')+'</td>'
+      +'<td class="num">'+qty(r.c.contract_qty)+'</td><td class="num">'+won(r.c.unit_price)+'</td>'
+      +'<td class="num">'+won(r.c.contract_amount)+'</td>'
+      + seqs.map(function(s){ var v=r.per[s]; return '<td class="num seqcol">'+(v?won(v.amount_this):'-')+'</td>'; }).join('')
+      +'<td class="num sumcol">'+won(r.prevAmt)+'</td>'
+      +'<td class="num sumcol"><b>'+won(r.thisAmt)+'</b></td>'
+      +'<td class="num sumcol">'+won(r.cumAmt)+'</td>'
+      +'<td class="num sumcol">'+r.pct.toFixed(1)+'%</td>'
+      +'<td class="num sumcol">'+won(r.remainAmt)+'</td></tr>';
+  }).join('')
+  +'<tr class="total"><td class="fx fx1">합계</td><td class="fx fx2"></td><td class="fx fx3"></td>'
+    +'<td></td><td></td><td></td><td></td><td class="num">'+won(t.ca)+'</td>'
+    + seqs.map(function(s){
+        var v=rows.reduce(function(a,r){ return a+(r.per[s]?num(r.per[s].amount_this):0); },0);
+        return '<td class="num seqcol">'+won(v)+'</td>';
+      }).join('')
+    +'<td class="num sumcol">'+won(t.pv)+'</td><td class="num sumcol">'+won(t.cu)+'</td>'
+    +'<td class="num sumcol">'+won(t.cm)+'</td>'
+    +'<td class="num sumcol">'+(t.ca>0?(t.cm/t.ca*100).toFixed(1):'0.0')+'%</td>'
+    +'<td class="num sumcol">'+won(t.rm)+'</td></tr>';
+
+  document.getElementById('pmSummary').textContent=rows.length+'건';
+  document.getElementById('pmCards').innerHTML=
+     card('계약금액',won(t.ca))+card('전회누계',won(t.pv))+card('금회기성',won(t.cu),true)
+    +card('누계기성',won(t.cm))+card('잔여기성',won(t.rm))
+    +card('기성률', (t.ca>0?(t.cm/t.ca*100).toFixed(1):'0.0')+'%');
+}
+function card(k,v,hl){
+  return '<div class="card'+(hl?' hl':'')+'"><div class="k">'+k+'</div><div class="v">'+v+'</div></div>';
+}
+
+async function createPeriod(){
+  var m=document.getElementById('pmMonth').value;
+  if(!m){ alert('생성할 월을 선택하세요.'); return; }
+  var y=Number(m.slice(0,4)), mo=Number(m.slice(5,7));
+  if(!confirm(y+'년 '+mo+'월 기성 회차를 만들까요?\n('+y+'-'+String(mo).padStart(2,'0')+'-01 ~ 월말)')) return;
+  var r=await sbClient.rpc('create_monthly_period',{p_year:y,p_month:mo});
+  if(r.error){
+    alert(r.error.code==='PGRST202'
+      ? '회차 생성 기능이 아직 서버에 없습니다.\nSUPABASE_기성계층_ALL.sql 을 먼저 실행해 주세요.'
+      : '회차 생성 실패: '+r.error.message);
+    return;
+  }
+  pmLoaded=false; loadPayment();
+}
+
+async function closePeriod(){
+  var seq=Number(document.getElementById('pmPeriod').value)||0;
+  var p=periods.find(function(x){ return x.seq_no===seq; });
+  if(!p){ alert('마감할 회차를 선택하세요.'); return; }
+  if(p.status!=='open'){ alert('이미 마감된 회차입니다.'); return; }
+  var actor=localStorage.getItem('member_id');
+  if(!actor){ alert('로그인 정보가 없습니다.'); return; }
+  if(!confirm('제'+seq+'회 기성을 마감합니다.\n\n· 기간: '+p.period_from+' ~ '+p.period_to+'\n'
+    +'· 승인된 일보만 반영되고, 반영된 일보는 수정 잠금됩니다\n'
+    +'· 마감 후에는 금액이 고정되어 단가를 바꿔도 변하지 않습니다\n\n계속할까요?')) return;
+  var r=await sbClient.rpc('close_payment_period',{p_period_id:p.id,p_actor_id:actor});
+  if(r.error){ alert('마감 실패: '+r.error.message); return; }
+  var d=Array.isArray(r.data)?r.data[0]:r.data;
+  alert('제'+seq+'회 마감 완료\n\n· 편입 일보: '+(d?d.linked_reports:0)+'건\n· 기성 항목: '
+    +(d?d.billed_lines:0)+'건\n· 미계약 항목(제외): '+(d?d.uncontracted:0)+'건');
+  pmLoaded=false; loadPayment();
+}
+
+/* ── 내역서 내보내기 — 원본 양식("4. 내역서")과 동일 구조 ────────────────
+   No. | Description | Specification | Unit | Q'ty
+   | 계약금액[Mat U/P·Amount, Labor U/P·Amount, Exp U/P·Amount, Total U/P·Amount]
+   | 제1회기성[Q'ty + 위 4쌍] | … | 전회기성누계 | 금회기성 | 기성청구 누계 | 공정률 | 비 고
+
+   원본 확인 결과 회차별 개별 열은 "이전 회차까지"만 넣는다. 현재 회차는 개별 열 없이
+   '금회기성' 블록으로만 나온다(제7회 내역서 4행: 제1회 … 6회기성 | 전회기성성누계 |
+   금회기성 | 기성청구 누계 | 공정률 | 비 고 → 총 97열).                          */
+function exportPaymentExcel(){
+  if(typeof XLSX==='undefined'){ alert('엑셀 모듈을 불러오지 못했습니다.'); return; }
+  if(!contracts.length){ alert('계약내역이 없습니다.'); return; }
+  var cur=Number(document.getElementById('pmPeriod').value)||0;
+  var p=periods.find(function(x){ return x.seq_no===cur; });
+  var rows=buildRows(cur);
+  var seqs=periods.filter(function(x){ return x.seq_no<cur; }).map(function(x){ return x.seq_no; });
+
+  var BASE=5;
+  var blocks=[{label:'계약금액',qty:false}];
+  seqs.forEach(function(s){ blocks.push({label:'제'+s+'회기성',qty:true,seq:s}); });
+  blocks.push({label:'전회기성누계',qty:true});
+  blocks.push({label:'금회기성',qty:true});
+  blocks.push({label:'기성청구 누계',qty:true});
+
+  var h4=['','No.','Description','Specification','Unit',"Q'ty"];
+  var h5=['','','','','',''], h6=['','','','','',''];
+  var merges=[], col=BASE+1;
+  blocks.forEach(function(b){
+    if(b.qty){ h4.push("Q'ty"); h5.push(''); h6.push(''); col++; }
+    var start=col;
+    ['Material Cost','Labor Cost','Expense','Total'].forEach(function(g){
+      h4.push(''); h5.push(g); h5.push(''); h6.push('U/P'); h6.push('Amount');
+      merges.push({s:{r:4,c:col},e:{r:4,c:col+1}});
+      h4.push(''); col+=2;
+    });
+    h4[start]=b.label;
+    merges.push({s:{r:3,c:start},e:{r:3,c:col-1}});
+  });
+  h4.push('공정률'); h5.push(''); h6.push('');
+  h4.push('비  고'); h5.push(''); h6.push('');
+
+  var aoa=[
+    ['', (p?p.period_to.slice(0,7).replace('-','년 ')+'월':'')+' ( 제'+cur+'회 기성 )'],
+    ['', 'Project : '+(localStorage.getItem('member_project')||'')],
+    ['', 'Discipline : 계장','','','','','','[Unit : 원]'],
+    h4,h5,h6
+  ];
+  rows.forEach(function(r,i){
+    var c=r.c;
+    var line=['', c.item_no||('('+(i+1)+')'), c.description||'', c.spec||'', c.unit||'', num(c.contract_qty)];
+    var cq=num(c.contract_qty);
+    line.push(num(c.mat_price), num(c.mat_price)*cq, num(c.labor_price), num(c.labor_price)*cq,
+              num(c.expense_price), num(c.expense_price)*cq, num(c.unit_price), num(c.unit_price)*cq);
+    seqs.forEach(function(s){
+      var v=r.per[s], q=v?num(v.qty_this):0;
+      line.push(q);
+      line.push(num(c.mat_price),     v?num(v.mat_this):0);
+      line.push(num(c.labor_price),   v?num(v.labor_this):0);
+      line.push(num(c.expense_price), v?num(v.expense_this):0);
+      line.push(num(c.unit_price),    v?num(v.amount_this):0);
+    });
+    [[r.prevQty,r.prevAmt],[r.thisQty,r.thisAmt],[r.cumQty,r.cumAmt]].forEach(function(pair){
+      var q=pair[0];
+      line.push(q);
+      line.push(num(c.mat_price),     num(c.mat_price)*q);
+      line.push(num(c.labor_price),   num(c.labor_price)*q);
+      line.push(num(c.expense_price), num(c.expense_price)*q);
+      line.push(num(c.unit_price),    pair[1]);
+    });
+    line.push(Number((r.pct/100).toFixed(6)));
+    line.push(c.remark||'');
+    aoa.push(line);
+  });
+
+  var ws=XLSX.utils.aoa_to_sheet(aoa);
+  ws['!merges']=merges;
+  ws['!cols']=[{wch:2},{wch:10},{wch:32},{wch:22},{wch:7},{wch:10}]
+    .concat(new Array(Math.max(0,h6.length-6)).fill({wch:12}));
+  var wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'내역서');
+  XLSX.writeFile(wb,'제'+cur+'회 기성청구 내역서_'+new Date().toISOString().slice(0,10)+'.xlsx');
+}
+
+loadContract();
+</script>
+
+<!-- 앱 공용 이동 버튼. 파일은 report 저장소에 하나만 두고 각 앱이 절대경로로 불러온다. -->
+<script>var _nf=document.createElement('script'); _nf.src='/report/nav-fab.js'; document.body.appendChild(_nf);</script>
+</body>
+</html>
