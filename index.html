@@ -170,8 +170,8 @@ document.getElementById('hdrDate').textContent =
 /* 프로젝트명은 계정(member_project)이 아니라 공용 설정에서 읽는다 — 이 앱은 계정 연동을 안 한다. */
 var PROJECT_NAME='S-OIL SHAHEEN Project 계장공사 3공구(PKG-1)';
 
-var SUPABASE_URL='https://feymoykefzfwucbrqoja.supabase.co';
-var SUPABASE_KEY='sb_publishable_ANT6G7_ka3IPHRk_4vLtBg_7G9NWW7i';
+var SUPABASE_URL=localStorage.getItem('site_supabase_url')||'https://feymoykefzfwucbrqoja.supabase.co';
+var SUPABASE_KEY=localStorage.getItem('site_supabase_key')||'sb_publishable_ANT6G7_ka3IPHRk_4vLtBg_7G9NWW7i';
 var sbClient=(typeof supabase!=='undefined')?supabase.createClient(SUPABASE_URL,SUPABASE_KEY):null;
 
 function showTab(btn,key){
